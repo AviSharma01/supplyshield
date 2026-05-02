@@ -1,0 +1,43 @@
+{
+  "name": "supplyshield",
+  "version": "0.1.0",
+  "description": "Supply chain security for npm projects with reachability-aware vulnerability analysis",
+  "main": "dist/index.js",
+  "bin": {
+    "supplyshield": "./bin/supplyshield.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli/index.ts",
+    "start": "node dist/cli/index.js",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "security",
+    "sbom",
+    "cyclonedx",
+    "vulnerability",
+    "supply-chain",
+    "osv",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@cyclonedx/cyclonedx-library": "^6.11.0",
+    "axios": "^1.7.2",
+    "chalk": "^4.1.2",
+    "commander": "^12.1.0",
+    "glob": "^10.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "tsx": "^4.11.0",
+    "typescript": "^5.4.5"
+  }
+}
