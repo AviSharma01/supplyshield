@@ -1,10 +1,11 @@
 /**
  * SupplyShield Main Entry Point
- * 
+ *
  * Orchestrates the complete security scanning workflow
  */
 
-import { ScanOptions, Report, ReportMetadata, ReportSummary } from './types';
+import { ScanOptions, Report, ReportMetadata, ReportSummary, ReachabilityResult } from './types';
+import { version } from '../package.json';
 import * as parsers from './parsers';
 import * as sbom from './sbom';
 import * as vulnerabilities from './vulnerabilities';
@@ -30,10 +31,11 @@ export async function scan(options: ScanOptions): Promise<Report> {
   
   // Step 2: Generate SBOM
   console.log('Step 2: Generating SBOM...');
+  // TODO: Extract project name and version from package.json
   const sbomData = await sbom.generateSBOM(
     packages,
-    'project-name', // TODO: Extract from package.json
-    '1.0.0' // TODO: Extract from package.json
+    'project-name',
+    '1.0.0'
   );
   
   // Step 3: Query vulnerabilities
@@ -53,15 +55,26 @@ export async function scan(options: ScanOptions): Promise<Report> {
   // Step 5: Calculate risk scores
   console.log('Step 5: Calculating risk scores...');
   const riskScores = [];
+  
+  // Create default reachability result for when analysis is skipped
+  const defaultReachability: ReachabilityResult = {
+    packageName: '',
+    isImported: false,
+    importLocations: [],
+    isProduction: false,
+    isDevelopment: false
+  };
+  
   for (const pkg of packages) {
     const vulns = vulnMap.get(pkg.name) || [];
-    const reach = reachabilityMap.get(pkg.name);
+    const reach = reachabilityMap.get(pkg.name) || {
+      ...defaultReachability,
+      packageName: pkg.name
+    };
     
     for (const vuln of vulns) {
-      if (reach) {
-        const score = risk.calculateRiskScore(vuln, pkg, reach);
-        riskScores.push(score);
-      }
+      const score = risk.calculateRiskScore(vuln, pkg, reach);
+      riskScores.push(score);
     }
   }
   
@@ -72,11 +85,12 @@ export async function scan(options: ScanOptions): Promise<Report> {
   
   // Step 7: Generate report
   console.log('Step 7: Generating report...');
+  // TODO: Extract project name and version from package.json
   const metadata: ReportMetadata = {
-    projectName: 'project-name', // TODO: Extract from package.json
-    projectVersion: '1.0.0', // TODO: Extract from package.json
+    projectName: 'project-name',
+    projectVersion: '1.0.0',
     scanDate: new Date().toISOString(),
-    supplyShieldVersion: '0.1.0'
+    supplyShieldVersion: version
   };
   
   const summary: ReportSummary = {
@@ -134,5 +148,3 @@ export async function saveReport(
 // Export all modules for direct access if needed
 export { parsers, sbom, vulnerabilities, reachability, risk, report };
 export * from './types';
-
-// Made with Bob

@@ -8,5 +8,3 @@
  */
 
 require('../dist/cli/index.js');
-
-// Made with Bob

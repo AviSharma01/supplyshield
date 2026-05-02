@@ -60,4 +60,3 @@ export function validateSBOM(_sbom: any): boolean {
   return true;
 }
 
-// Made with Bob

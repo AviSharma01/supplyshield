@@ -134,5 +134,3 @@ export interface ScanOptions {
   skipReachability?: boolean;
   verbose?: boolean;
 }
-
-// Made with Bob

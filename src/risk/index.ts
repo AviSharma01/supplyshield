@@ -1,11 +1,28 @@
 /**
  * Risk Module
- * 
+ *
  * Combines vulnerability and reachability data to calculate risk scores
  * and prioritize remediation actions
  */
 
 import { Package, Vulnerability, ReachabilityResult, RiskScore, Finding, RemediationStep } from '../types';
+
+// Risk scoring constants
+const REACHABILITY_MULTIPLIER = 1.5; // Increase risk for imported packages
+const UNREACHABLE_MULTIPLIER = 0.3; // Decrease risk for unused dependencies
+const PRODUCTION_MULTIPLIER = 1.3; // Increase risk for production code
+const DEVELOPMENT_MULTIPLIER = 0.7; // Decrease risk for dev/test code
+const DIRECT_DEPENDENCY_MULTIPLIER = 1.2; // Easier to fix direct dependencies
+const TRANSITIVE_DEPENDENCY_MULTIPLIER = 0.9; // Harder to fix transitive dependencies
+
+// Risk level thresholds
+const CRITICAL_THRESHOLD = 80;
+const HIGH_THRESHOLD = 60;
+const MEDIUM_THRESHOLD = 40;
+const LOW_THRESHOLD = 20;
+
+// Finding ID prefix
+const FINDING_ID_PREFIX = 'FINDING-';
 
 /**
  * Calculate risk score for a vulnerability
@@ -17,11 +34,11 @@ import { Package, Vulnerability, ReachabilityResult, RiskScore, Finding, Remedia
  */
 export function calculateRiskScore(
   vulnerability: Vulnerability,
-  pkg: Package,
+  packageInfo: Package,
   reachability: ReachabilityResult
 ): RiskScore {
   // TODO: Implement sophisticated risk scoring algorithm
-  console.log(`Calculating risk for ${pkg.name} - ${vulnerability.id}`);
+  console.log(`Calculating risk for ${packageInfo.name} - ${vulnerability.id}`);
   
   let score = 0;
   let reasoning = '';
@@ -33,42 +50,42 @@ export function calculateRiskScore(
   
   // Adjust for reachability
   if (reachability.isImported) {
-    score *= 1.5;
+    score *= REACHABILITY_MULTIPLIER;
     reasoning += 'Package is imported in codebase. ';
   } else {
-    score *= 0.3;
+    score *= UNREACHABLE_MULTIPLIER;
     reasoning += 'Package is not imported (unused dependency). ';
   }
   
   // Adjust for production vs dev
   if (reachability.isProduction) {
-    score *= 1.3;
+    score *= PRODUCTION_MULTIPLIER;
     reasoning += 'Used in production code. ';
   } else if (reachability.isDevelopment) {
-    score *= 0.7;
+    score *= DEVELOPMENT_MULTIPLIER;
     reasoning += 'Only used in development/test code. ';
   }
   
   // Adjust for direct vs transitive
-  if (pkg.isDirect) {
-    score *= 1.2;
+  if (packageInfo.isDirect) {
+    score *= DIRECT_DEPENDENCY_MULTIPLIER;
     reasoning += 'Direct dependency (easier to fix). ';
   } else {
-    score *= 0.9;
+    score *= TRANSITIVE_DEPENDENCY_MULTIPLIER;
     reasoning += 'Transitive dependency. ';
   }
   
   // Determine risk level
   let riskLevel: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-  if (score >= 80) riskLevel = 'CRITICAL';
-  else if (score >= 60) riskLevel = 'HIGH';
-  else if (score >= 40) riskLevel = 'MEDIUM';
-  else if (score >= 20) riskLevel = 'LOW';
+  if (score >= CRITICAL_THRESHOLD) riskLevel = 'CRITICAL';
+  else if (score >= HIGH_THRESHOLD) riskLevel = 'HIGH';
+  else if (score >= MEDIUM_THRESHOLD) riskLevel = 'MEDIUM';
+  else if (score >= LOW_THRESHOLD) riskLevel = 'LOW';
   else riskLevel = 'INFO';
   
   return {
     vulnerability,
-    package: pkg,
+    package: packageInfo,
     reachability,
     riskLevel,
     score: Math.min(100, Math.round(score)),
@@ -115,7 +132,7 @@ export function createFindings(riskScores: RiskScore[]): Finding[] {
   console.log(`Creating findings from ${riskScores.length} risk scores`);
   
   const findings: Finding[] = riskScores.map((riskScore, index) => ({
-    id: `FINDING-${index + 1}`,
+    id: `${FINDING_ID_PREFIX}${index + 1}`,
     title: `${riskScore.vulnerability.id} in ${riskScore.package.name}`,
     package: riskScore.package,
     vulnerability: riskScore.vulnerability,
@@ -152,16 +169,18 @@ export function prioritizeFindings(findings: Finding[]): Finding[] {
   // 4. Unreachable development dependencies (lowest)
   
   return findings.sort((a, b) => {
+    const aIsReachableProduction = a.riskScore.reachability.isProduction && a.riskScore.reachability.isImported;
+    const bIsReachableProduction = b.riskScore.reachability.isProduction && b.riskScore.reachability.isImported;
+    
     // First by reachability in production
-    if (a.riskScore.reachability.isProduction && a.riskScore.reachability.isImported) {
-      if (!b.riskScore.reachability.isProduction || !b.riskScore.reachability.isImported) {
-        return -1;
-      }
+    if (aIsReachableProduction && !bIsReachableProduction) {
+      return -1;
+    }
+    if (!aIsReachableProduction && bIsReachableProduction) {
+      return 1;
     }
     
     // Then by risk score
     return b.riskScore.score - a.riskScore.score;
   });
 }
-
-// Made with Bob

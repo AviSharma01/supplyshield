@@ -74,4 +74,3 @@ export function isVersionAffected(
   return false;
 }
 
-// Made with Bob
