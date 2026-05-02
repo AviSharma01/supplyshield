@@ -13,6 +13,8 @@ export interface Package {
   path: string[]; // Dependency path from root
   license?: string;
   description?: string;
+  resolved?: string; // npm registry URL
+  integrity?: string; // SHA-512 hash for verification
 }
 
 /**
