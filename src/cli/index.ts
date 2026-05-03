@@ -35,6 +35,7 @@ program
       const { buildDependencyTree } = await import('../parsers');
       const { scanVulnerabilities } = await import('../vulnerabilities');
       const { analyzeReachability } = await import('../reachability');
+      const { classifyRisk } = await import('../risk');
       
       console.log(chalk.gray(`Project path: ${options.path}`));
       console.log(chalk.gray(`Output: ${options.output}`));
@@ -48,7 +49,7 @@ program
       
       // Step 2: Scan for vulnerabilities
       console.log('🔍 Scanning for vulnerabilities...');
-      const vulnerabilities = await scanVulnerabilities(packages);
+      const packageVulnerabilities = await scanVulnerabilities(packages);
       
       // Step 3: Analyze reachability (unless skipped)
       let reachabilityMap = new Map();
@@ -56,40 +57,105 @@ program
         reachabilityMap = await analyzeReachability(options.path, packages);
       } else {
         console.log('⏭️  Skipping reachability analysis\n');
+        // Create default reachability for all packages
+        for (const pkg of packages) {
+          reachabilityMap.set(pkg.name, {
+            packageName: pkg.name,
+            isReachable: false,
+            importedIn: [],
+            importCount: 0,
+            importType: 'static' as const,
+            isProduction: !pkg.isDev,
+            isDevelopment: pkg.isDev
+          });
+        }
       }
+      
+      // Step 4: Classify risk and prioritize findings
+      console.log('⚖️  Classifying risk and prioritizing findings...');
+      const findings = classifyRisk(packageVulnerabilities, reachabilityMap, packages);
+      
+      // Calculate total vulnerabilities
+      const totalVulns = Array.from(packageVulnerabilities.values()).reduce((sum, vulns) => sum + vulns.length, 0);
       
       // Display summary
       console.log(chalk.blue.bold('\n📊 Scan Summary\n'));
       console.log(chalk.gray(`Total packages: ${packages.length}`));
-      console.log(chalk.gray(`Total vulnerabilities: ${vulnerabilities.length}`));
+      console.log(chalk.gray(`Total vulnerabilities: ${totalVulns}`));
+      console.log(chalk.gray(`Total findings: ${findings.length}`));
       
       if (!options.skipReachability) {
         const reachableCount = Array.from(reachabilityMap.values()).filter(r => r.isReachable).length;
         console.log(chalk.gray(`Reachable packages: ${reachableCount}/${packages.length}`));
         
-        // Show reachability breakdown
-        const reachableVulnPackages = Array.from(reachabilityMap.values())
-          .filter(r => r.isReachable && vulnerabilities.some(v => v.id.includes(r.packageName)));
-        console.log(chalk.gray(`Reachable vulnerable packages: ${reachableVulnPackages.length}`));
+        const reachableFindings = findings.filter(f => f.reachability.isReachable);
+        console.log(chalk.gray(`Reachable findings: ${reachableFindings.length}`));
       }
       
-      // Count by severity
-      const critical = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
-      const high = vulnerabilities.filter(v => v.severity === 'HIGH').length;
-      const medium = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
-      const low = vulnerabilities.filter(v => v.severity === 'LOW').length;
+      // Count by priority level
+      const criticalReachable = findings.filter(f => f.priorityLevel === 'CRITICAL_REACHABLE').length;
+      const highReachable = findings.filter(f => f.priorityLevel === 'HIGH_REACHABLE').length;
+      const mediumReachable = findings.filter(f => f.priorityLevel === 'MEDIUM_REACHABLE').length;
+      const lowReachable = findings.filter(f => f.priorityLevel === 'LOW_REACHABLE').length;
+      const unreachable = findings.filter(f => f.priorityLevel.includes('UNREACHABLE')).length;
+      const devOnly = findings.filter(f => f.priorityLevel === 'DEV_ONLY').length;
       
       console.log('');
-      if (critical > 0) console.log(chalk.red(`  🔴 CRITICAL: ${critical}`));
-      if (high > 0) console.log(chalk.red(`  🟠 HIGH:     ${high}`));
-      if (medium > 0) console.log(chalk.yellow(`  🟡 MEDIUM:   ${medium}`));
-      if (low > 0) console.log(chalk.blue(`  🔵 LOW:      ${low}`));
+      if (criticalReachable > 0) console.log(chalk.red.bold(`  🔴 CRITICAL (Reachable): ${criticalReachable}`));
+      if (highReachable > 0) console.log(chalk.red(`  🟠 HIGH (Reachable):     ${highReachable}`));
+      if (mediumReachable > 0) console.log(chalk.yellow(`  🟡 MEDIUM (Reachable):   ${mediumReachable}`));
+      if (lowReachable > 0) console.log(chalk.blue(`  🔵 LOW (Reachable):      ${lowReachable}`));
+      if (unreachable > 0) console.log(chalk.gray(`  ⚪ Unreachable:          ${unreachable}`));
+      if (devOnly > 0) console.log(chalk.gray(`  ⚫ Dev-only:             ${devOnly}`));
       
-      console.log(chalk.green.bold('\n✓ Scan complete!\n'));
+      // Display top 10 findings
+      if (findings.length > 0) {
+        console.log(chalk.blue.bold('\n🎯 Top Priority Findings (Top 10)\n'));
+        
+        const topFindings = findings.slice(0, 10);
+        for (let i = 0; i < topFindings.length; i++) {
+          const finding = topFindings[i]!;
+          const num = `${i + 1}.`.padEnd(4);
+          
+          // Color based on priority level
+          let badge = '';
+          let color = chalk.gray;
+          if (finding.priorityLevel === 'CRITICAL_REACHABLE') {
+            badge = '🔴';
+            color = chalk.red.bold;
+          } else if (finding.priorityLevel === 'HIGH_REACHABLE') {
+            badge = '🟠';
+            color = chalk.red;
+          } else if (finding.priorityLevel === 'MEDIUM_REACHABLE') {
+            badge = '🟡';
+            color = chalk.yellow;
+          } else if (finding.priorityLevel === 'LOW_REACHABLE') {
+            badge = '🔵';
+            color = chalk.blue;
+          } else if (finding.priorityLevel.includes('UNREACHABLE')) {
+            badge = '⚪';
+            color = chalk.gray;
+          } else {
+            badge = '⚫';
+            color = chalk.gray;
+          }
+          
+          console.log(color(`${num}${badge} ${finding.vulnerability.id} in ${finding.package.name}@${finding.package.version}`));
+          console.log(color(`     Priority: ${finding.priorityLevel} (Score: ${finding.priorityScore})`));
+          console.log(chalk.gray(`     ${finding.recommendation}`));
+          console.log('');
+        }
+        
+        if (findings.length > 10) {
+          console.log(chalk.gray(`... and ${findings.length - 10} more findings\n`));
+        }
+      }
       
-      // Exit with error code if critical or high vulnerabilities
-      if (critical > 0 || high > 0) {
-        console.log(chalk.red.bold('❌ Critical or high severity vulnerabilities found!\n'));
+      console.log(chalk.green.bold('✓ Scan complete!\n'));
+      
+      // Exit with error code if critical or high reachable vulnerabilities
+      if (criticalReachable > 0 || highReachable > 0) {
+        console.log(chalk.red.bold('❌ Critical or high severity reachable vulnerabilities found!\n'));
         process.exit(1);
       }
       
@@ -182,26 +248,32 @@ program
       const packages = await buildDependencyTree(options.path, options.includeDev);
       
       // Step 2: Scan for vulnerabilities
-      const vulnerabilities = await scanVulnerabilities(packages);
+      const packageVulnerabilities = await scanVulnerabilities(packages);
+      
+      // Flatten vulnerabilities for display
+      const allVulns: any[] = [];
+      for (const vulns of packageVulnerabilities.values()) {
+        allVulns.push(...vulns);
+      }
       
       // Step 3: Display summary
       console.log(chalk.blue.bold('\n📊 Vulnerability Summary\n'));
       
-      if (vulnerabilities.length === 0) {
+      if (allVulns.length === 0) {
         console.log(chalk.green('✓ No vulnerabilities found!'));
         console.log(chalk.gray(`Scanned ${packages.length} packages\n`));
         return;
       }
       
       // Count by severity
-      const critical = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
-      const high = vulnerabilities.filter(v => v.severity === 'HIGH').length;
-      const medium = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
-      const low = vulnerabilities.filter(v => v.severity === 'LOW').length;
-      const unknown = vulnerabilities.filter(v => !v.severity).length;
+      const critical = allVulns.filter(v => v.severity === 'CRITICAL').length;
+      const high = allVulns.filter(v => v.severity === 'HIGH').length;
+      const medium = allVulns.filter(v => v.severity === 'MEDIUM').length;
+      const low = allVulns.filter(v => v.severity === 'LOW').length;
+      const unknown = allVulns.filter(v => !v.severity).length;
       
       // Display counts
-      console.log(chalk.gray('Total vulnerabilities found: ') + chalk.red.bold(vulnerabilities.length));
+      console.log(chalk.gray('Total vulnerabilities found: ') + chalk.red.bold(allVulns.length));
       console.log('');
       
       if (critical > 0) {
@@ -221,7 +293,7 @@ program
       }
       
       // Display critical and high vulnerabilities
-      const criticalAndHigh = vulnerabilities.filter(
+      const criticalAndHigh = allVulns.filter(
         v => v.severity === 'CRITICAL' || v.severity === 'HIGH'
       );
       

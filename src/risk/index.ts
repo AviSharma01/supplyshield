@@ -5,182 +5,262 @@
  * and prioritize remediation actions
  */
 
-import { Package, Vulnerability, ReachabilityResult, RiskScore, Finding, RemediationStep } from '../types';
-
-// Risk scoring constants
-const REACHABILITY_MULTIPLIER = 1.5; // Increase risk for imported packages
-const UNREACHABLE_MULTIPLIER = 0.3; // Decrease risk for unused dependencies
-const PRODUCTION_MULTIPLIER = 1.3; // Increase risk for production code
-const DEVELOPMENT_MULTIPLIER = 0.7; // Decrease risk for dev/test code
-const DIRECT_DEPENDENCY_MULTIPLIER = 1.2; // Easier to fix direct dependencies
-const TRANSITIVE_DEPENDENCY_MULTIPLIER = 0.9; // Harder to fix transitive dependencies
-
-// Risk level thresholds
-const CRITICAL_THRESHOLD = 80;
-const HIGH_THRESHOLD = 60;
-const MEDIUM_THRESHOLD = 40;
-const LOW_THRESHOLD = 20;
-
-// Finding ID prefix
-const FINDING_ID_PREFIX = 'FINDING-';
+import { Package, Vulnerability, ReachabilityResult, Finding, PriorityLevel } from '../types';
 
 /**
- * Calculate risk score for a vulnerability
- * 
- * @param vulnerability - Vulnerability data
- * @param package - Package information
- * @param reachability - Reachability analysis result
- * @returns Risk score with reasoning
+ * Classify risk and create prioritized findings
+ *
+ * Combines vulnerability data + reachability data + dependency metadata
+ * into prioritized findings ranked by real-world impact.
+ *
+ * @param packageVulnerabilities - Map of package keys (name@version) to their vulnerabilities
+ * @param reachabilityMap - Map of package names to reachability results
+ * @param packages - Array of all packages
+ * @returns Array of findings sorted by priority (highest first)
  */
-export function calculateRiskScore(
-  vulnerability: Vulnerability,
-  packageInfo: Package,
-  reachability: ReachabilityResult
-): RiskScore {
-  // TODO: Implement sophisticated risk scoring algorithm
-  console.log(`Calculating risk for ${packageInfo.name} - ${vulnerability.id}`);
+export function classifyRisk(
+  packageVulnerabilities: Map<string, Vulnerability[]>,
+  reachabilityMap: Map<string, ReachabilityResult>,
+  packages: Package[]
+): Finding[] {
+  const findings: Finding[] = [];
   
-  let score = 0;
-  let reasoning = '';
-  
-  // Base score from CVSS
-  if (vulnerability.cvssScore) {
-    score = vulnerability.cvssScore * 10;
+  // Create a map of package names to package objects for quick lookup
+  const packageMap = new Map<string, Package>();
+  for (const pkg of packages) {
+    packageMap.set(pkg.name, pkg);
   }
   
-  // Adjust for reachability
-  if (reachability.isReachable) {
-    score *= REACHABILITY_MULTIPLIER;
-    reasoning += 'Package is imported in codebase. ';
-  } else {
-    score *= UNREACHABLE_MULTIPLIER;
-    reasoning += 'Package is not imported (unused dependency). ';
+  // Create findings for each package-vulnerability combination
+  for (const [pkgKey, vulns] of packageVulnerabilities) {
+    // Extract package name from key (name@version)
+    const packageName = pkgKey.split('@').slice(0, -1).join('@');
+    const pkg = packageMap.get(packageName);
+    if (!pkg) continue;
+    
+    const reachability = reachabilityMap.get(packageName) || {
+      packageName,
+      isReachable: false,
+      importedIn: [],
+      importCount: 0,
+      importType: 'static' as const,
+      isProduction: !pkg.isDev,
+      isDevelopment: pkg.isDev
+    };
+    
+    for (const vuln of vulns) {
+      const finding = createFinding(vuln, pkg, reachability);
+      findings.push(finding);
+    }
   }
   
-  // Adjust for production vs dev
-  if (reachability.isProduction) {
-    score *= PRODUCTION_MULTIPLIER;
-    reasoning += 'Used in production code. ';
-  } else if (reachability.isDevelopment) {
-    score *= DEVELOPMENT_MULTIPLIER;
-    reasoning += 'Only used in development/test code. ';
-  }
-  
-  // Adjust for direct vs transitive
-  if (packageInfo.isDirect) {
-    score *= DIRECT_DEPENDENCY_MULTIPLIER;
-    reasoning += 'Direct dependency (easier to fix). ';
-  } else {
-    score *= TRANSITIVE_DEPENDENCY_MULTIPLIER;
-    reasoning += 'Transitive dependency. ';
-  }
-  
-  // Determine risk level
-  let riskLevel: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-  if (score >= CRITICAL_THRESHOLD) riskLevel = 'CRITICAL';
-  else if (score >= HIGH_THRESHOLD) riskLevel = 'HIGH';
-  else if (score >= MEDIUM_THRESHOLD) riskLevel = 'MEDIUM';
-  else if (score >= LOW_THRESHOLD) riskLevel = 'LOW';
-  else riskLevel = 'INFO';
-  
-  return {
-    vulnerability,
-    package: packageInfo,
-    reachability,
-    riskLevel,
-    score: Math.min(100, Math.round(score)),
-    reasoning: reasoning.trim()
-  };
-}
-
-/**
- * Generate remediation steps for a finding
- * 
- * @param riskScore - Risk score with vulnerability and package info
- * @returns Array of remediation steps
- */
-export function generateRemediationSteps(riskScore: RiskScore): RemediationStep[] {
-  // TODO: Implement intelligent remediation suggestions
-  const steps: RemediationStep[] = [];
-  
-  if (riskScore.vulnerability.fixedVersions && riskScore.vulnerability.fixedVersions.length > 0) {
-    steps.push({
-      action: 'UPDATE',
-      description: `Update ${riskScore.package.name} to version ${riskScore.vulnerability.fixedVersions[0]}`,
-      targetVersion: riskScore.vulnerability.fixedVersions[0],
-      effort: riskScore.package.isDirect ? 'LOW' : 'MEDIUM'
-    });
-  } else {
-    steps.push({
-      action: 'REVIEW',
-      description: `Review ${riskScore.package.name} for security implications`,
-      effort: 'MEDIUM'
-    });
-  }
-  
-  return steps;
-}
-
-/**
- * Create findings from risk scores
- * 
- * @param riskScores - Array of risk scores
- * @returns Array of prioritized findings
- */
-export function createFindings(riskScores: RiskScore[]): Finding[] {
-  // TODO: Implement finding creation and prioritization
-  console.log(`Creating findings from ${riskScores.length} risk scores`);
-  
-  const findings: Finding[] = riskScores.map((riskScore, index) => ({
-    id: `${FINDING_ID_PREFIX}${index + 1}`,
-    title: `${riskScore.vulnerability.id} in ${riskScore.package.name}`,
-    package: riskScore.package,
-    vulnerability: riskScore.vulnerability,
-    riskScore,
-    remediation: generateRemediationSteps(riskScore),
-    priority: index + 1
-  }));
-  
-  // Sort by risk score (highest first)
-  findings.sort((a, b) => b.riskScore.score - a.riskScore.score);
-  
-  // Update priorities after sorting
-  findings.forEach((finding, index) => {
-    finding.priority = index + 1;
-  });
+  // Sort findings by priority score (highest first)
+  findings.sort((a, b) => b.priorityScore - a.priorityScore);
   
   return findings;
 }
 
 /**
- * Prioritize findings based on multiple factors
- * 
- * @param findings - Array of findings to prioritize
- * @returns Prioritized array of findings
+ * Create a single finding from vulnerability, package, and reachability data
+ */
+function createFinding(
+  vulnerability: Vulnerability,
+  pkg: Package,
+  reachability: ReachabilityResult
+): Finding {
+  const { priorityLevel, priorityScore } = calculatePriority(
+    vulnerability,
+    reachability
+  );
+  
+  const recommendation = generateRecommendation(
+    vulnerability,
+    pkg,
+    reachability,
+    priorityLevel
+  );
+  
+  return {
+    vulnerability,
+    package: pkg,
+    reachability,
+    priorityLevel,
+    priorityScore,
+    recommendation
+  };
+}
+
+/**
+ * Calculate priority level and score based on vulnerability severity,
+ * reachability, and production/dev status
+ */
+function calculatePriority(
+  vulnerability: Vulnerability,
+  reachability: ReachabilityResult
+): { priorityLevel: PriorityLevel; priorityScore: number } {
+  const severity = vulnerability.severity || 'MEDIUM';
+  const isReachable = reachability.isReachable;
+  const isProduction = reachability.isProduction;
+  const isDevelopment = reachability.isDevelopment;
+  
+  // Priority logic:
+  // - Reachable + prod = highest priority (use vuln severity)
+  // - Reachable + dev = medium priority regardless of severity
+  // - Unreachable + prod = lower priority (use vuln severity but cap at MEDIUM_UNREACHABLE)
+  // - Unreachable + dev = DEV_ONLY (lowest)
+  
+  let priorityLevel: PriorityLevel;
+  let priorityScore: number;
+  
+  if (isReachable && isProduction) {
+    // Reachable in production - highest priority
+    switch (severity) {
+      case 'CRITICAL':
+        priorityLevel = 'CRITICAL_REACHABLE';
+        priorityScore = 100;
+        break;
+      case 'HIGH':
+        priorityLevel = 'HIGH_REACHABLE';
+        priorityScore = 85;
+        break;
+      case 'MEDIUM':
+        priorityLevel = 'MEDIUM_REACHABLE';
+        priorityScore = 70;
+        break;
+      case 'LOW':
+      default:
+        priorityLevel = 'LOW_REACHABLE';
+        priorityScore = 55;
+        break;
+    }
+  } else if (isReachable && isDevelopment) {
+    // Reachable in dev - medium priority regardless of severity
+    priorityLevel = 'MEDIUM_REACHABLE';
+    priorityScore = 40;
+  } else if (!isReachable && isProduction) {
+    // Unreachable but in prod tree - lower priority, capped at MEDIUM_UNREACHABLE
+    switch (severity) {
+      case 'CRITICAL':
+        priorityLevel = 'CRITICAL_UNREACHABLE';
+        priorityScore = 30;
+        break;
+      case 'HIGH':
+        priorityLevel = 'HIGH_UNREACHABLE';
+        priorityScore = 25;
+        break;
+      case 'MEDIUM':
+        priorityLevel = 'MEDIUM_UNREACHABLE';
+        priorityScore = 20;
+        break;
+      case 'LOW':
+      default:
+        priorityLevel = 'LOW_UNREACHABLE';
+        priorityScore = 15;
+        break;
+    }
+  } else {
+    // Unreachable + dev = DEV_ONLY (lowest)
+    priorityLevel = 'DEV_ONLY';
+    priorityScore = 5;
+  }
+  
+  return { priorityLevel, priorityScore };
+}
+
+/**
+ * Generate recommendation text based on finding details
+ */
+function generateRecommendation(
+  vulnerability: Vulnerability,
+  pkg: Package,
+  reachability: ReachabilityResult,
+  _priorityLevel: PriorityLevel
+): string {
+  const fixedVersion = vulnerability.fixedVersions?.[0];
+  
+  if (reachability.isReachable) {
+    // Reachable - provide upgrade recommendation with file paths
+    let recommendation = `Upgrade ${pkg.name} to ${fixedVersion || 'a patched version'}`;
+    
+    if (reachability.importedIn.length > 0) {
+      const fileList = reachability.importedIn.slice(0, 3).join(', ');
+      const moreFiles = reachability.importedIn.length > 3 
+        ? ` and ${reachability.importedIn.length - 3} more` 
+        : '';
+      recommendation += `. Imported in: ${fileList}${moreFiles}`;
+    }
+    
+    return recommendation;
+  } else if (reachability.isProduction) {
+    // Unreachable but in prod tree
+    return `Vulnerable but not directly imported. Safe to defer unless transitively executed.`;
+  } else {
+    // Dev-only
+    return `Dev dependency only — no production exposure.`;
+  }
+}
+
+/**
+ * Legacy function - kept for backward compatibility
+ * Use classifyRisk instead
+ */
+export function calculateRiskScore(
+  vulnerability: Vulnerability,
+  packageInfo: Package,
+  reachability: ReachabilityResult
+): any {
+  console.warn('calculateRiskScore is deprecated. Use classifyRisk instead.');
+  
+  const pkgKey = `${packageInfo.name}@${packageInfo.version}`;
+  const packageVulnerabilities = new Map([[pkgKey, [vulnerability]]]);
+  const findings = classifyRisk(packageVulnerabilities, new Map([[packageInfo.name, reachability]]), [packageInfo]);
+  
+  if (findings.length === 0) {
+    return {
+      vulnerability,
+      package: packageInfo,
+      reachability,
+      riskLevel: 'INFO',
+      score: 0,
+      reasoning: 'No risk calculated'
+    };
+  }
+  
+  const finding = findings[0]!;
+  return {
+    vulnerability: finding.vulnerability,
+    package: finding.package,
+    reachability: finding.reachability,
+    riskLevel: finding.priorityLevel.includes('CRITICAL') ? 'CRITICAL' :
+               finding.priorityLevel.includes('HIGH') ? 'HIGH' :
+               finding.priorityLevel.includes('MEDIUM') ? 'MEDIUM' : 'LOW',
+    score: finding.priorityScore,
+    reasoning: finding.recommendation
+  };
+}
+
+/**
+ * Legacy function - kept for backward compatibility
+ */
+export function generateRemediationSteps(_riskScore: any): any[] {
+  console.warn('generateRemediationSteps is deprecated. Use classifyRisk instead.');
+  return [];
+}
+
+/**
+ * Legacy function - kept for backward compatibility
+ */
+export function createFindings(_riskScores: any[]): any[] {
+  console.warn('createFindings is deprecated. Use classifyRisk instead.');
+  return [];
+}
+
+/**
+ * Legacy function - kept for backward compatibility
  */
 export function prioritizeFindings(findings: Finding[]): Finding[] {
-  // TODO: Implement advanced prioritization logic
-  console.log(`Prioritizing ${findings.length} findings`);
-  
-  // Priority factors:
-  // 1. Reachable production vulnerabilities (highest)
-  // 2. Reachable development vulnerabilities
-  // 3. Unreachable production dependencies
-  // 4. Unreachable development dependencies (lowest)
-  
-  return findings.sort((a, b) => {
-    const aIsReachableProduction = a.riskScore.reachability.isProduction && a.riskScore.reachability.isReachable;
-    const bIsReachableProduction = b.riskScore.reachability.isProduction && b.riskScore.reachability.isReachable;
-    
-    // First by reachability in production
-    if (aIsReachableProduction && !bIsReachableProduction) {
-      return -1;
-    }
-    if (!aIsReachableProduction && bIsReachableProduction) {
-      return 1;
-    }
-    
-    // Then by risk score
-    return b.riskScore.score - a.riskScore.score;
-  });
+  console.warn('prioritizeFindings is deprecated. Findings from classifyRisk are already prioritized.');
+  return findings;
 }
+
+// Made with Bob

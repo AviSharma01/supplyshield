@@ -300,27 +300,30 @@ function generateFindingsHTML(findings: Finding[]): string {
     return '<p>No vulnerabilities found. Great job! 🎉</p>';
   }
   
-  return findings.map(finding => `
-    <div class="finding ${escapeHtml(finding.riskScore.riskLevel.toLowerCase())}">
+  return findings.map(finding => {
+    const priorityClass = finding.priorityLevel.toLowerCase().replace('_', '-');
+    return `
+    <div class="finding ${escapeHtml(priorityClass)}">
       <h3>
-        <span class="badge ${escapeHtml(finding.riskScore.riskLevel.toLowerCase())}">${escapeHtml(finding.riskScore.riskLevel)}</span>
-        ${escapeHtml(finding.title)}
+        <span class="badge ${escapeHtml(priorityClass)}">${escapeHtml(finding.priorityLevel)}</span>
+        ${escapeHtml(finding.vulnerability.id)} in ${escapeHtml(finding.package.name)}
       </h3>
       <p><strong>Package:</strong> ${escapeHtml(finding.package.name)}@${escapeHtml(finding.package.version)}</p>
       <p><strong>Vulnerability:</strong> ${escapeHtml(finding.vulnerability.id)}</p>
       <p><strong>Summary:</strong> ${escapeHtml(finding.vulnerability.summary)}</p>
-      <p><strong>Risk Score:</strong> ${finding.riskScore.score}/100</p>
-      <p><strong>Reasoning:</strong> ${escapeHtml(finding.riskScore.reasoning)}</p>
+      <p><strong>Priority Score:</strong> ${finding.priorityScore}/100</p>
+      <p><strong>Priority Level:</strong> ${escapeHtml(finding.priorityLevel)}</p>
+      <p><strong>Reachable:</strong> ${finding.reachability.isReachable ? 'Yes' : 'No'}</p>
+      ${finding.reachability.isReachable && finding.reachability.importedIn.length > 0 ? `
+        <p><strong>Imported in:</strong> ${finding.reachability.importedIn.slice(0, 3).map(f => escapeHtml(f)).join(', ')}${finding.reachability.importedIn.length > 3 ? ` and ${finding.reachability.importedIn.length - 3} more` : ''}</p>
+      ` : ''}
       <div style="margin-top: 15px;">
-        <strong>Remediation:</strong>
-        <ul style="margin-left: 20px; margin-top: 5px;">
-          ${finding.remediation.map(step => `
-            <li>${escapeHtml(step.description)} (Effort: ${escapeHtml(step.effort)})</li>
-          `).join('')}
-        </ul>
+        <strong>Recommendation:</strong>
+        <p style="margin-left: 20px; margin-top: 5px;">${escapeHtml(finding.recommendation)}</p>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 /**

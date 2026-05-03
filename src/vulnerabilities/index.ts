@@ -371,20 +371,22 @@ async function batchQueryOSVInternal(packages: Package[]): Promise<Map<string, s
 
 /**
  * Main function to scan packages for vulnerabilities
+ * Returns a map of package keys (name@version) to their vulnerabilities
  */
-export async function scanVulnerabilities(packages: Package[]): Promise<Vulnerability[]> {
+export async function scanVulnerabilities(packages: Package[]): Promise<Map<string, Vulnerability[]>> {
   console.log(`\nScanning ${packages.length} packages for vulnerabilities...`);
   
-  const allVulnerabilities: Vulnerability[] = [];
+  const packageVulnerabilities = new Map<string, Vulnerability[]>();
   const packagesToQuery: Package[] = [];
   const cachedResults = new Map<string, Vulnerability[]>();
   
   // Check cache first
   for (const pkg of packages) {
+    const pkgKey = `${pkg.name}@${pkg.version}`;
     const cached = getCachedVulnerabilities(pkg.name, pkg.version);
     if (cached !== null) {
-      cachedResults.set(`${pkg.name}@${pkg.version}`, cached);
-      allVulnerabilities.push(...cached);
+      cachedResults.set(pkgKey, cached);
+      packageVulnerabilities.set(pkgKey, cached);
     } else {
       packagesToQuery.push(pkg);
     }
@@ -396,7 +398,7 @@ export async function scanVulnerabilities(packages: Package[]): Promise<Vulnerab
   
   if (packagesToQuery.length === 0) {
     console.log('All results from cache');
-    return allVulnerabilities;
+    return packageVulnerabilities;
   }
   
   console.log(`Querying OSV.dev for ${packagesToQuery.length} packages...`);
@@ -413,6 +415,7 @@ export async function scanVulnerabilities(packages: Package[]): Promise<Vulnerab
       // No vulnerabilities found in this batch, cache empty results
       for (const pkg of batch) {
         cacheVulnerabilities(pkg.name, pkg.version, []);
+        packageVulnerabilities.set(`${pkg.name}@${pkg.version}`, []);
       }
       continue;
     }
@@ -457,13 +460,15 @@ export async function scanVulnerabilities(packages: Package[]): Promise<Vulnerab
       // Cache the results
       cacheVulnerabilities(pkg.name, pkg.version, pkgVulns);
       
-      allVulnerabilities.push(...pkgVulns);
+      // Store in result map
+      packageVulnerabilities.set(pkgKey, pkgVulns);
     }
   }
   
-  console.log(`\nFound ${allVulnerabilities.length} total vulnerabilities`);
+  const totalVulns = Array.from(packageVulnerabilities.values()).reduce((sum, vulns) => sum + vulns.length, 0);
+  console.log(`\nFound ${totalVulns} total vulnerabilities across ${packageVulnerabilities.size} packages`);
   
-  return allVulnerabilities;
+  return packageVulnerabilities;
 }
 
 /**
@@ -481,7 +486,9 @@ export async function queryOSV(
     path: [packageName]
   };
   
-  return scanVulnerabilities([pkg]);
+  const result = await scanVulnerabilities([pkg]);
+  const pkgKey = `${packageName}@${version}`;
+  return result.get(pkgKey) || [];
 }
 
 /**

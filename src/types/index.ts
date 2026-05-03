@@ -69,16 +69,29 @@ export interface RiskScore {
 }
 
 /**
+ * Priority level for findings
+ */
+export type PriorityLevel =
+  | 'CRITICAL_REACHABLE'
+  | 'HIGH_REACHABLE'
+  | 'MEDIUM_REACHABLE'
+  | 'LOW_REACHABLE'
+  | 'CRITICAL_UNREACHABLE'
+  | 'HIGH_UNREACHABLE'
+  | 'MEDIUM_UNREACHABLE'
+  | 'LOW_UNREACHABLE'
+  | 'DEV_ONLY';
+
+/**
  * A prioritized finding for remediation
  */
 export interface Finding {
-  id: string;
-  title: string;
-  package: Package;
   vulnerability: Vulnerability;
-  riskScore: RiskScore;
-  remediation: RemediationStep[];
-  priority: number; // 1 = highest
+  package: Package;
+  reachability: ReachabilityResult;
+  priorityLevel: PriorityLevel;
+  priorityScore: number; // 0-100
+  recommendation: string;
 }
 
 /**

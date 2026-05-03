@@ -4,7 +4,7 @@
  * Orchestrates the complete security scanning workflow
  */
 
-import { ScanOptions, Report, ReportMetadata, ReportSummary, ReachabilityResult } from './types';
+import { ScanOptions, Report, ReportMetadata, ReportSummary } from './types';
 import { version } from '../package.json';
 import * as parsers from './parsers';
 import * as sbom from './sbom';
@@ -43,7 +43,7 @@ export async function scan(options: ScanOptions): Promise<Report> {
   
   // Step 3: Query vulnerabilities
   console.log('Step 3: Querying vulnerabilities...');
-  const vulnMap = await vulnerabilities.batchQueryOSV(packages);
+  const packageVulnerabilities = await vulnerabilities.scanVulnerabilities(packages);
   
   // Step 4: Analyze reachability (if not skipped)
   console.log('Step 4: Analyzing reachability...');
@@ -53,62 +53,60 @@ export async function scan(options: ScanOptions): Promise<Report> {
       options.projectPath,
       packages
     );
-  }
-  
-  // Step 5: Calculate risk scores
-  console.log('Step 5: Calculating risk scores...');
-  const riskScores = [];
-  
-  // Create default reachability result for when analysis is skipped
-  const defaultReachability: ReachabilityResult = {
-    packageName: '',
-    isReachable: false,
-    importedIn: [],
-    importCount: 0,
-    importType: 'static',
-    isProduction: false,
-    isDevelopment: false
-  };
-  
-  for (const pkg of packages) {
-    const vulns = vulnMap.get(pkg.name) || [];
-    const reach = reachabilityMap.get(pkg.name) || {
-      ...defaultReachability,
-      packageName: pkg.name
-    };
-    
-    for (const vuln of vulns) {
-      const score = risk.calculateRiskScore(vuln, pkg, reach);
-      riskScores.push(score);
+  } else {
+    // Create default reachability for all packages when skipped
+    for (const pkg of packages) {
+      reachabilityMap.set(pkg.name, {
+        packageName: pkg.name,
+        isReachable: false,
+        importedIn: [],
+        importCount: 0,
+        importType: 'static',
+        isProduction: !pkg.isDev,
+        isDevelopment: pkg.isDev
+      });
     }
   }
   
-  // Step 6: Create and prioritize findings
-  console.log('Step 6: Creating findings...');
-  const findings = risk.createFindings(riskScores);
-  const prioritizedFindings = risk.prioritizeFindings(findings);
+  // Step 5: Classify risk and create prioritized findings
+  console.log('Step 5: Classifying risk and prioritizing findings...');
+  const prioritizedFindings = risk.classifyRisk(
+    packageVulnerabilities,
+    reachabilityMap,
+    packages
+  );
   
-  // Step 7: Generate report
-  console.log('Step 7: Generating report...');
-  // TODO: Extract project name and version from package.json
+  // Step 6: Generate report
+  console.log('Step 6: Generating report...');
   const metadata: ReportMetadata = {
-    projectName: 'project-name',
-    projectVersion: '1.0.0',
+    projectName: packageJsonData.name,
+    projectVersion: packageJsonData.version,
     scanDate: new Date().toISOString(),
     supplyShieldVersion: version
   };
+  
+  // Calculate total vulnerabilities from the map
+  const totalVulns = Array.from(packageVulnerabilities.values()).reduce((sum, vulns) => sum + vulns.length, 0);
   
   const summary: ReportSummary = {
     totalPackages: packages.length,
     directDependencies: packages.filter(p => p.isDirect).length,
     transitiveDependencies: packages.filter(p => !p.isDirect).length,
-    totalVulnerabilities: riskScores.length,
-    criticalFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'CRITICAL').length,
-    highFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'HIGH').length,
-    mediumFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'MEDIUM').length,
-    lowFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'LOW').length,
-    reachableVulnerabilities: prioritizedFindings.filter(f => f.riskScore.reachability.isReachable).length,
-    unreachableVulnerabilities: prioritizedFindings.filter(f => !f.riskScore.reachability.isReachable).length
+    totalVulnerabilities: totalVulns,
+    criticalFindings: prioritizedFindings.filter(f =>
+      f.priorityLevel === 'CRITICAL_REACHABLE' || f.priorityLevel === 'CRITICAL_UNREACHABLE'
+    ).length,
+    highFindings: prioritizedFindings.filter(f =>
+      f.priorityLevel === 'HIGH_REACHABLE' || f.priorityLevel === 'HIGH_UNREACHABLE'
+    ).length,
+    mediumFindings: prioritizedFindings.filter(f =>
+      f.priorityLevel === 'MEDIUM_REACHABLE' || f.priorityLevel === 'MEDIUM_UNREACHABLE'
+    ).length,
+    lowFindings: prioritizedFindings.filter(f =>
+      f.priorityLevel === 'LOW_REACHABLE' || f.priorityLevel === 'LOW_UNREACHABLE' || f.priorityLevel === 'DEV_ONLY'
+    ).length,
+    reachableVulnerabilities: prioritizedFindings.filter(f => f.reachability.isReachable).length,
+    unreachableVulnerabilities: prioritizedFindings.filter(f => !f.reachability.isReachable).length
   };
   
   const finalReport: Report = {
