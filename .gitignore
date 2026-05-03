@@ -1,6 +1,8 @@
 # SupplyShield
 .supplyshield-cache/
 supplyshield-report.html
+test-report.html
+test-report.ts
 
 # Logs
 logs

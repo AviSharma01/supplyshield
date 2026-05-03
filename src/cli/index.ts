@@ -32,10 +32,11 @@ program
     
     try {
       // Import modules dynamically
-      const { buildDependencyTree } = await import('../parsers');
+      const { buildDependencyTree, parsePackageJson } = await import('../parsers');
       const { scanVulnerabilities } = await import('../vulnerabilities');
       const { analyzeReachability } = await import('../reachability');
       const { classifyRisk } = await import('../risk');
+      const { generateHTMLReport, writeHTMLReport } = await import('../report');
       
       console.log(chalk.gray(`Project path: ${options.path}`));
       console.log(chalk.gray(`Output: ${options.output}`));
@@ -151,7 +152,46 @@ program
         }
       }
       
+      // Step 5: Generate HTML report
+      console.log('📄 Generating HTML report...');
+      const packageJsonData = await parsePackageJson(options.path);
+      
+      const reportData = {
+        metadata: {
+          projectName: packageJsonData.name,
+          projectVersion: packageJsonData.version,
+          scanDate: new Date().toISOString(),
+          supplyShieldVersion: version
+        },
+        summary: {
+          totalPackages: packages.length,
+          directDependencies: packages.filter(p => p.isDirect).length,
+          transitiveDependencies: packages.filter(p => !p.isDirect).length,
+          totalVulnerabilities: totalVulns,
+          criticalFindings: findings.filter(f =>
+            f.priorityLevel === 'CRITICAL_REACHABLE' || f.priorityLevel === 'CRITICAL_UNREACHABLE'
+          ).length,
+          highFindings: findings.filter(f =>
+            f.priorityLevel === 'HIGH_REACHABLE' || f.priorityLevel === 'HIGH_UNREACHABLE'
+          ).length,
+          mediumFindings: findings.filter(f =>
+            f.priorityLevel === 'MEDIUM_REACHABLE' || f.priorityLevel === 'MEDIUM_UNREACHABLE'
+          ).length,
+          lowFindings: findings.filter(f =>
+            f.priorityLevel === 'LOW_REACHABLE' || f.priorityLevel === 'LOW_UNREACHABLE' || f.priorityLevel === 'DEV_ONLY'
+          ).length,
+          reachableVulnerabilities: findings.filter(f => f.reachability.isReachable).length,
+          unreachableVulnerabilities: findings.filter(f => !f.reachability.isReachable).length
+        },
+        findings,
+        generatedAt: new Date().toISOString()
+      };
+      
+      const html = generateHTMLReport(reportData);
+      await writeHTMLReport(html, options.output);
+      
       console.log(chalk.green.bold('✓ Scan complete!\n'));
+      console.log(chalk.cyan(`📊 HTML report saved to: ${options.output}\n`));
       
       // Exit with error code if critical or high reachable vulnerabilities
       if (criticalReachable > 0 || highReachable > 0) {
