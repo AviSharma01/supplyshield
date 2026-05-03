@@ -98,12 +98,105 @@ program
   .description('Check for vulnerabilities without reachability analysis')
   .option('-p, --path <path>', 'Project path', process.cwd())
   .option('--include-dev', 'Include dev dependencies', false)
+  .option('--verbose', 'Verbose output', false)
   .action(async (options) => {
     console.log(chalk.blue.bold('\n🔍 Checking Vulnerabilities\n'));
     
-    // TODO: Implement vulnerability check
-    console.log(chalk.yellow('⚠️  Vulnerability check not yet implemented'));
-    console.log(chalk.gray(`Project path: ${options.path}`));
+    try {
+      // Import modules dynamically
+      const { buildDependencyTree } = await import('../parsers');
+      const { scanVulnerabilities } = await import('../vulnerabilities');
+      
+      console.log(chalk.gray(`Project path: ${options.path}`));
+      console.log(chalk.gray(`Include dev dependencies: ${options.includeDev}\n`));
+      
+      // Step 1: Build dependency tree
+      console.log('📦 Building dependency tree...');
+      const packages = await buildDependencyTree(options.path, options.includeDev);
+      
+      // Step 2: Scan for vulnerabilities
+      const vulnerabilities = await scanVulnerabilities(packages);
+      
+      // Step 3: Display summary
+      console.log(chalk.blue.bold('\n📊 Vulnerability Summary\n'));
+      
+      if (vulnerabilities.length === 0) {
+        console.log(chalk.green('✓ No vulnerabilities found!'));
+        console.log(chalk.gray(`Scanned ${packages.length} packages\n`));
+        return;
+      }
+      
+      // Count by severity
+      const critical = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
+      const high = vulnerabilities.filter(v => v.severity === 'HIGH').length;
+      const medium = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
+      const low = vulnerabilities.filter(v => v.severity === 'LOW').length;
+      const unknown = vulnerabilities.filter(v => !v.severity).length;
+      
+      // Display counts
+      console.log(chalk.gray('Total vulnerabilities found: ') + chalk.red.bold(vulnerabilities.length));
+      console.log('');
+      
+      if (critical > 0) {
+        console.log(chalk.red(`  🔴 CRITICAL: ${critical}`));
+      }
+      if (high > 0) {
+        console.log(chalk.red(`  🟠 HIGH:     ${high}`));
+      }
+      if (medium > 0) {
+        console.log(chalk.yellow(`  🟡 MEDIUM:   ${medium}`));
+      }
+      if (low > 0) {
+        console.log(chalk.blue(`  🔵 LOW:      ${low}`));
+      }
+      if (unknown > 0) {
+        console.log(chalk.gray(`  ⚪ UNKNOWN:  ${unknown}`));
+      }
+      
+      // Display critical and high vulnerabilities
+      const criticalAndHigh = vulnerabilities.filter(
+        v => v.severity === 'CRITICAL' || v.severity === 'HIGH'
+      );
+      
+      if (criticalAndHigh.length > 0) {
+        console.log(chalk.red.bold('\n⚠️  Critical & High Severity Vulnerabilities:\n'));
+        
+        for (const vuln of criticalAndHigh) {
+          const severityColor = vuln.severity === 'CRITICAL' ? chalk.red : chalk.red;
+          const severityBadge = vuln.severity === 'CRITICAL' ? '🔴' : '🟠';
+          
+          console.log(`${severityBadge} ${severityColor.bold(vuln.id)} - ${vuln.severity}`);
+          console.log(`   ${chalk.gray(vuln.summary)}`);
+          
+          if (vuln.fixedVersions && vuln.fixedVersions.length > 0) {
+            console.log(`   ${chalk.green('Fix:')} Upgrade to ${vuln.fixedVersions.join(', ')}`);
+          }
+          
+          if (options.verbose && vuln.references.length > 0) {
+            console.log(`   ${chalk.gray('References:')} ${vuln.references[0]}`);
+          }
+          
+          console.log('');
+        }
+      }
+      
+      // Exit with error code if critical or high vulnerabilities found
+      if (critical > 0 || high > 0) {
+        console.log(chalk.red.bold('❌ Critical or high severity vulnerabilities found!\n'));
+        process.exit(1);
+      } else {
+        console.log(chalk.yellow.bold('⚠️  Medium or low severity vulnerabilities found.\n'));
+      }
+      
+    } catch (error) {
+      console.error(chalk.red.bold('\n❌ Vulnerability check failed\n'));
+      console.error(chalk.red((error as Error).message));
+      if (options.verbose) {
+        console.error(chalk.gray('\nStack trace:'));
+        console.error(chalk.gray((error as Error).stack));
+      }
+      process.exit(1);
+    }
   });
 
 // Handle unknown commands

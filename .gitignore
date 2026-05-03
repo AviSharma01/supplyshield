@@ -1,3 +1,7 @@
+# SupplyShield
+.supplyshield-cache/
+supplyshield-report.html
+
 # Logs
 logs
 *.log
