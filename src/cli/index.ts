@@ -46,10 +46,51 @@ program
   .action(async (options) => {
     console.log(chalk.blue.bold('\n📋 Generating SBOM\n'));
     
-    // TODO: Implement SBOM generation
-    console.log(chalk.yellow('⚠️  SBOM generation not yet implemented'));
-    console.log(chalk.gray(`Project path: ${options.path}`));
-    console.log(chalk.gray(`Output: ${options.output}`));
+    try {
+      // Import modules dynamically to avoid circular dependencies
+      const { buildDependencyTree, parsePackageJson } = await import('../parsers');
+      const { generateSBOM, writeSBOM, validateSBOM } = await import('../sbom');
+      
+      console.log(chalk.gray(`Project path: ${options.path}`));
+      console.log(chalk.gray(`Output: ${options.output}`));
+      console.log(chalk.gray(`Include dev dependencies: ${options.includeDev}\n`));
+      
+      // Step 1: Parse package.json for project metadata
+      console.log('📦 Parsing project metadata...');
+      const packageJsonData = await parsePackageJson(options.path);
+      
+      // Step 2: Build dependency tree
+      console.log('🔍 Building dependency tree...');
+      const packages = await buildDependencyTree(options.path, options.includeDev);
+      
+      // Step 3: Generate SBOM
+      console.log('🔨 Generating CycloneDX 1.5 SBOM...');
+      const sbomJson = await generateSBOM(packages, {
+        name: packageJsonData.name,
+        version: packageJsonData.version,
+        license: packageJsonData.license
+      });
+      
+      // Step 4: Validate SBOM
+      console.log('✅ Validating SBOM...');
+      await validateSBOM(sbomJson);
+      
+      // Step 5: Write SBOM to file
+      console.log('💾 Writing SBOM to file...');
+      await writeSBOM(sbomJson, options.output);
+      
+      console.log(chalk.green.bold('\n✓ SBOM generation complete!\n'));
+      console.log(chalk.gray(`Generated SBOM: ${options.output}`));
+      console.log(chalk.gray(`Total components: ${packages.length}`));
+    } catch (error) {
+      console.error(chalk.red.bold('\n❌ SBOM generation failed\n'));
+      console.error(chalk.red((error as Error).message));
+      if (options.verbose) {
+        console.error(chalk.gray('\nStack trace:'));
+        console.error(chalk.gray((error as Error).stack));
+      }
+      process.exit(1);
+    }
   });
 
 program

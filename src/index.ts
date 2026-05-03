@@ -31,11 +31,14 @@ export async function scan(options: ScanOptions): Promise<Report> {
   
   // Step 2: Generate SBOM
   console.log('Step 2: Generating SBOM...');
-  // TODO: Extract project name and version from package.json
+  const packageJsonData = await parsers.parsePackageJson(options.projectPath);
   const sbomData = await sbom.generateSBOM(
     packages,
-    'project-name',
-    '1.0.0'
+    {
+      name: packageJsonData.name,
+      version: packageJsonData.version,
+      license: packageJsonData.license
+    }
   );
   
   // Step 3: Query vulnerabilities
