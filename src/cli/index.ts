@@ -30,11 +30,78 @@ program
     console.log(chalk.blue.bold('\n🛡️  SupplyShield Security Scanner\n'));
     console.log(chalk.gray(`Version: ${version}\n`));
     
-    // TODO: Implement scan logic
-    console.log(chalk.yellow('⚠️  Scan functionality not yet implemented'));
-    console.log(chalk.gray(`Project path: ${options.path}`));
-    console.log(chalk.gray(`Output: ${options.output}`));
-    console.log(chalk.gray(`Format: ${options.format}`));
+    try {
+      // Import modules dynamically
+      const { buildDependencyTree } = await import('../parsers');
+      const { scanVulnerabilities } = await import('../vulnerabilities');
+      const { analyzeReachability } = await import('../reachability');
+      
+      console.log(chalk.gray(`Project path: ${options.path}`));
+      console.log(chalk.gray(`Output: ${options.output}`));
+      console.log(chalk.gray(`Format: ${options.format}`));
+      console.log(chalk.gray(`Include dev dependencies: ${options.includeDev}`));
+      console.log(chalk.gray(`Skip reachability: ${options.skipReachability}\n`));
+      
+      // Step 1: Build dependency tree
+      console.log('📦 Building dependency tree...');
+      const packages = await buildDependencyTree(options.path, options.includeDev);
+      
+      // Step 2: Scan for vulnerabilities
+      console.log('🔍 Scanning for vulnerabilities...');
+      const vulnerabilities = await scanVulnerabilities(packages);
+      
+      // Step 3: Analyze reachability (unless skipped)
+      let reachabilityMap = new Map();
+      if (!options.skipReachability) {
+        reachabilityMap = await analyzeReachability(options.path, packages);
+      } else {
+        console.log('⏭️  Skipping reachability analysis\n');
+      }
+      
+      // Display summary
+      console.log(chalk.blue.bold('\n📊 Scan Summary\n'));
+      console.log(chalk.gray(`Total packages: ${packages.length}`));
+      console.log(chalk.gray(`Total vulnerabilities: ${vulnerabilities.length}`));
+      
+      if (!options.skipReachability) {
+        const reachableCount = Array.from(reachabilityMap.values()).filter(r => r.isReachable).length;
+        console.log(chalk.gray(`Reachable packages: ${reachableCount}/${packages.length}`));
+        
+        // Show reachability breakdown
+        const reachableVulnPackages = Array.from(reachabilityMap.values())
+          .filter(r => r.isReachable && vulnerabilities.some(v => v.id.includes(r.packageName)));
+        console.log(chalk.gray(`Reachable vulnerable packages: ${reachableVulnPackages.length}`));
+      }
+      
+      // Count by severity
+      const critical = vulnerabilities.filter(v => v.severity === 'CRITICAL').length;
+      const high = vulnerabilities.filter(v => v.severity === 'HIGH').length;
+      const medium = vulnerabilities.filter(v => v.severity === 'MEDIUM').length;
+      const low = vulnerabilities.filter(v => v.severity === 'LOW').length;
+      
+      console.log('');
+      if (critical > 0) console.log(chalk.red(`  🔴 CRITICAL: ${critical}`));
+      if (high > 0) console.log(chalk.red(`  🟠 HIGH:     ${high}`));
+      if (medium > 0) console.log(chalk.yellow(`  🟡 MEDIUM:   ${medium}`));
+      if (low > 0) console.log(chalk.blue(`  🔵 LOW:      ${low}`));
+      
+      console.log(chalk.green.bold('\n✓ Scan complete!\n'));
+      
+      // Exit with error code if critical or high vulnerabilities
+      if (critical > 0 || high > 0) {
+        console.log(chalk.red.bold('❌ Critical or high severity vulnerabilities found!\n'));
+        process.exit(1);
+      }
+      
+    } catch (error) {
+      console.error(chalk.red.bold('\n❌ Scan failed\n'));
+      console.error(chalk.red((error as Error).message));
+      if (options.verbose) {
+        console.error(chalk.gray('\nStack trace:'));
+        console.error(chalk.gray((error as Error).stack));
+      }
+      process.exit(1);
+    }
   });
 
 program

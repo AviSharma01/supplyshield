@@ -38,19 +38,22 @@ export interface Vulnerability {
  */
 export interface ReachabilityResult {
   packageName: string;
-  isImported: boolean;
-  importLocations: ImportLocation[];
+  isReachable: boolean;
+  importedIn: string[]; // Array of file paths where package is imported
+  importCount: number;
+  importType: 'static' | 'dynamic' | 'require' | 'mixed';
   isProduction: boolean;
   isDevelopment: boolean;
 }
 
 /**
- * Location where a package is imported
+ * Location where a package is imported (internal use)
  */
 export interface ImportLocation {
   file: string;
   line: number;
   importStatement: string;
+  importType: 'static' | 'dynamic' | 'require' | 'reexport';
 }
 
 /**

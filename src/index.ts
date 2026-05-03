@@ -62,8 +62,10 @@ export async function scan(options: ScanOptions): Promise<Report> {
   // Create default reachability result for when analysis is skipped
   const defaultReachability: ReachabilityResult = {
     packageName: '',
-    isImported: false,
-    importLocations: [],
+    isReachable: false,
+    importedIn: [],
+    importCount: 0,
+    importType: 'static',
     isProduction: false,
     isDevelopment: false
   };
@@ -105,8 +107,8 @@ export async function scan(options: ScanOptions): Promise<Report> {
     highFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'HIGH').length,
     mediumFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'MEDIUM').length,
     lowFindings: prioritizedFindings.filter(f => f.riskScore.riskLevel === 'LOW').length,
-    reachableVulnerabilities: prioritizedFindings.filter(f => f.riskScore.reachability.isImported).length,
-    unreachableVulnerabilities: prioritizedFindings.filter(f => !f.riskScore.reachability.isImported).length
+    reachableVulnerabilities: prioritizedFindings.filter(f => f.riskScore.reachability.isReachable).length,
+    unreachableVulnerabilities: prioritizedFindings.filter(f => !f.riskScore.reachability.isReachable).length
   };
   
   const finalReport: Report = {

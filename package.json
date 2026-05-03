@@ -29,6 +29,8 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.3",
+    "@babel/types": "^7.29.0",
     "@cyclonedx/cyclonedx-library": "^6.11.0",
     "axios": "^1.7.2",
     "chalk": "^4.1.2",

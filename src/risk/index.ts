@@ -49,7 +49,7 @@ export function calculateRiskScore(
   }
   
   // Adjust for reachability
-  if (reachability.isImported) {
+  if (reachability.isReachable) {
     score *= REACHABILITY_MULTIPLIER;
     reasoning += 'Package is imported in codebase. ';
   } else {
@@ -169,8 +169,8 @@ export function prioritizeFindings(findings: Finding[]): Finding[] {
   // 4. Unreachable development dependencies (lowest)
   
   return findings.sort((a, b) => {
-    const aIsReachableProduction = a.riskScore.reachability.isProduction && a.riskScore.reachability.isImported;
-    const bIsReachableProduction = b.riskScore.reachability.isProduction && b.riskScore.reachability.isImported;
+    const aIsReachableProduction = a.riskScore.reachability.isProduction && a.riskScore.reachability.isReachable;
+    const bIsReachableProduction = b.riskScore.reachability.isProduction && b.riskScore.reachability.isReachable;
     
     // First by reachability in production
     if (aIsReachableProduction && !bIsReachableProduction) {
